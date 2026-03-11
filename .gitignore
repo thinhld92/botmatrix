@@ -2,6 +2,7 @@
 logs/
 *.log
 log_*.txt
+*.csv
 
 # Thư mục chứa history
 history/
