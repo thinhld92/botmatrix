@@ -53,8 +53,8 @@ while True:
                             writer.writerow([
                                 'Time_Closed', 'Pair_ID', 'Action', 'Volume', 
                                 'Leg1_Broker', 'Leg1_Ticket', 'Leg2_Broker', 'Leg2_Ticket',
-                                'Entry_Mode', 'Entry_Dev', 'Entry_Live', # 👉 Cột Thực Tế Vào
-                                'Close_Mode', 'Close_Dev', 'Close_Live', # 👉 Cột Thực Tế Đóng
+                                'Entry_Mode', 'Entry_Dev', 'Entry_Live',
+                                'Close_Mode', 'Close_Dev', 'Close_Live',
                                 'Leg1_Open', 'Leg1_Close', 'Leg2_Open', 'Leg2_Close', 
                                 'Leg1_Profit', 'Leg2_Profit', 'Total_Fee', 'Net_Profit'
                             ])

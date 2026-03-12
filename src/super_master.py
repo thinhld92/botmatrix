@@ -210,7 +210,7 @@ try:
             }
 
         # ----------------------------------------------------
-        # 3. ÔNG TƠ BÀ NGUYỆT (GHÉP CẶP TICKET) 
+        # 3. ÔNG TƠ BÀ NGUYỆT (GHÉP CẶP TICKET - BỐC VÉ MỚI NHẤT) 
         # ----------------------------------------------------
         paired_tickets = {broker: [] for broker in active_brokers}
         for cap in lich_su_vao_lenh:
@@ -224,14 +224,17 @@ try:
             unpaired_diff = [p for p in san_data[b_diff]["danh_sach_ticket"] if p['ticket'] not in paired_tickets[b_diff]]
             
             if len(unpaired_base) > 0 and len(unpaired_diff) > 0:
-                unpaired_base.sort(key=lambda x: x['ticket'])
-                unpaired_diff.sort(key=lambda x: x['ticket'])
+                # 👉 VŨ KHÍ TỐI THƯỢNG: Sắp xếp Ticket giảm dần. Vé mới nhất luôn nằm ở Index 0!
+                unpaired_base.sort(key=lambda x: x['ticket'], reverse=True)
+                unpaired_diff.sort(key=lambda x: x['ticket'], reverse=True)
+                
+                # Bốc ngay 2 vé mới nhất để ghép cặp cho Chuyến xe này
                 t_base, t_diff = unpaired_base[0], unpaired_diff[0]
                 
                 lich_su_vao_lenh.append({
                     "id_cap": f"PAIR_{t_base['ticket']}_{t_diff['ticket']}", "pair_group": chuyen["pair_group"],
                     "base": b_base, "ticket_b": t_base['ticket'], "diff": b_diff, "ticket_d": t_diff['ticket'],
-                    "huong": chuyen["huong"], "time_match": time.time(),
+                    "huong": chuyen["huong"], "time_match": time.time(), # Dùng giờ Local để tính Hold Time
                     "chenh_lech_vao": chuyen["chenh_vao"], "tinh_chat_vao": chuyen["mode_vao"]
                 })
                 paired_tickets[b_base].append(t_base['ticket'])
@@ -393,8 +396,14 @@ try:
         broker_direction_lock = {}
         for cap in lich_su_vao_lenh:
             b, d = cap['base'], cap['diff']
-            broker_direction_lock[b] = "BUY" if cap['huong'] == "MUA_BASE" else "SELL"
-            broker_direction_lock[d] = "SELL" if cap['huong'] == "MUA_BASE" else "BUY"
+            if cap['huong'] == "TH1":
+                # TH1: Sell Base, Buy Diff
+                broker_direction_lock[b] = "SELL"
+                broker_direction_lock[d] = "BUY"
+            elif cap['huong'] == "TH2":
+                # TH2: Buy Base, Sell Diff
+                broker_direction_lock[b] = "BUY"
+                broker_direction_lock[d] = "SELL"
 
         tin_hieu_kha_thi = []
         if cho_phep_vao_lenh:
@@ -475,7 +484,17 @@ try:
                 lenh_base, lenh_diff = th["chi_tiet"]["lenh_base"], th["chi_tiet"]["lenh_diff"]
                 vol_base, vol_diff = vol_map[b_base], vol_map[b_diff]
                 
-                ctx_vao = {"action_type": "OPEN"}
+               # Phải bơm đủ thông tin để Kế Toán còn biết đường ghép cặp OPEN
+                ctx_vao = {
+                    "pair_token": f"OPEN_{pair_group}_{time.time()}", # Cấp cho nó 1 cái ID độc nhất
+                    "pair_id": pair_group,
+                    "action_type": "OPEN",
+                    "chenh_vao": th["chenh_lech"],
+                    "mode_vao": th["mode_vao"],
+                    "huong": th["chi_tiet"]["loai_lenh"],
+                    "base": b_base,
+                    "diff": b_diff
+                }
                 r.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": lenh_base, "volume": vol_base, "context": ctx_vao}))
                 r.lpush(f"QUEUE:ORDER:{b_diff.upper()}", json.dumps({"action": lenh_diff, "volume": vol_diff, "context": ctx_vao}))
                 print(f"\n⚡ BÓP CÒ: {b_base} ({lenh_base}) <-> {b_diff} ({lenh_diff}) {th['mode_vao']} | Lệch: {th['chenh_lech']:.2f}")
