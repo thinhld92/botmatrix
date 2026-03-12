@@ -13,12 +13,14 @@ except: pass
 with open('config.json', 'r', encoding='utf-8') as f: config = json.load(f)
 r = redis.Redis(host=config['redis']['host'], port=config['redis']['port'], db=config['redis']['db'], decode_responses=True)
 
+vps_name = config.get("vps_name", "UNKNOWN_VPS")
+
 history_dir = "history"
 os.makedirs(history_dir, exist_ok=True)
 pending_receipts = {}
 receipt_timestamps = {}
 
-print("👓 Kế Toán Trưởng đã vào vị trí. Đang lắng nghe biên lai...")
+print(f"👓 Kế Toán Trưởng [{vps_name}] đã vào vị trí. Đang lắng nghe biên lai...")
 
 while True:
     try:
@@ -43,7 +45,8 @@ while True:
             danh_sach_san_trong_pair = list(pending_receipts[pair_token].keys())
 
             if is_single or len(danh_sach_san_trong_pair) == 2:
-                csv_file = os.path.join(history_dir, "master_trade_history.csv")
+                ten_file_csv = f"trade_history_{vps_name}.csv"
+                csv_file = os.path.join(history_dir, ten_file_csv)
                 file_exists = os.path.isfile(csv_file)
                 
                 try:
@@ -122,7 +125,7 @@ while True:
                     if pair_token in receipt_timestamps: del receipt_timestamps[pair_token]
 
                 except PermissionError:
-                    print(f"⚠️ LỖI: Hãy đóng file Excel 'master_trade_history.csv' để Kế Toán ghi sổ! Đang chờ...")
+                    print(f"⚠️ LỖI: Hãy đóng file Excel {ten_file_csv} để Kế Toán ghi sổ! Đang chờ...")
                     time.sleep(3)
                     
         # Quét dọn rác RAM (Biên lai mồ côi)
