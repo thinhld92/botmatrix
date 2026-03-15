@@ -139,6 +139,7 @@ try:
         if gio_cam_bat_buoc_dong:
             if len(lich_su_vao_lenh) > 0:
                 print(f"\n🛑 [GIỜ GIỚI NGHIÊM] Đã điểm {current_utc_time_str}! XẢ TOÀN BỘ CẶP!")
+                pipe = r.pipeline()
                 for cap in lich_su_vao_lenh[:]:
                     b_base, b_diff, pair_key = cap['base'], cap['diff'], cap['id_cap']
                     ctx_data = {
@@ -147,8 +148,9 @@ try:
                         "chenh_dong": 0, "mode_dong": "[BLACKOUT_CUT]", "action_type": "BLACKOUT_CLOSE",
                         "huong": cap['huong'], "base": b_base, "diff": b_diff
                     }
-                    r.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_b'], "comment": "BLACKOUT", "role": b_base, "context": ctx_data}))
-                    r.lpush(f"QUEUE:ORDER:{b_diff.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_d'], "comment": "BLACKOUT", "role": b_diff, "context": ctx_data}))
+                    pipe.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_b'], "comment": "BLACKOUT", "role": b_base, "context": ctx_data}))
+                    pipe.lpush(f"QUEUE:ORDER:{b_diff.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_d'], "comment": "BLACKOUT", "role": b_diff, "context": ctx_data}))
+                pipe.execute()
                 lich_su_vao_lenh.clear() 
                 luu_tri_nho()
             continue
@@ -251,6 +253,9 @@ try:
         # 4. BAO THANH THIÊN (XỬ TRẢM STOPOUT)
         # ----------------------------------------------------
         cac_cap_con_song = []
+        pipe_tram = r.pipeline()
+        has_tram = False
+        
         for cap in lich_su_vao_lenh:
             b_base, b_diff = cap['base'], cap['diff']
             live_tickets_base = [p['ticket'] for p in san_data[b_base]["danh_sach_ticket"]]
@@ -269,11 +274,16 @@ try:
             if base_alive and diff_alive:
                 cac_cap_con_song.append(cap)
             elif base_alive and not diff_alive:
-                r.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_b'], "role": b_base, "context": ctx_data}))
-                r.lpush(f"QUEUE:ORDER:{b_diff.upper()}", json.dumps({"action": "FETCH_HISTORY_ONLY", "ticket": cap['ticket_d'], "role": b_diff, "context": ctx_data}))
+                pipe_tram.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_b'], "role": b_base, "context": ctx_data}))
+                pipe_tram.lpush(f"QUEUE:ORDER:{b_diff.upper()}", json.dumps({"action": "FETCH_HISTORY_ONLY", "ticket": cap['ticket_d'], "role": b_diff, "context": ctx_data}))
+                has_tram = True
             elif not base_alive and diff_alive:
-                r.lpush(f"QUEUE:ORDER:{b_diff.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_d'], "role": b_diff, "context": ctx_data}))
-                r.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": "FETCH_HISTORY_ONLY", "ticket": cap['ticket_b'], "role": b_base, "context": ctx_data}))
+                pipe_tram.lpush(f"QUEUE:ORDER:{b_diff.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_d'], "role": b_diff, "context": ctx_data}))
+                pipe_tram.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": "FETCH_HISTORY_ONLY", "ticket": cap['ticket_b'], "role": b_base, "context": ctx_data}))
+                has_tram = True
+                
+        if has_tram:
+            pipe_tram.execute()
                 
         if len(lich_su_vao_lenh) != len(cac_cap_con_song):
             lich_su_vao_lenh = cac_cap_con_song
@@ -371,8 +381,10 @@ try:
                         "chenh_dong": tin_hieu['chenh_lech'], "mode_dong": f"[{chien_thuat.get('stable_mode', 'freeze')[0].upper()}]", "action_type": "CLOSE",
                         "huong": cap['huong'], "base": b_base, "diff": b_diff
                     }
-                    r.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_b'], "role": b_base, "context": ctx_data}))
-                    r.lpush(f"QUEUE:ORDER:{b_diff.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_d'], "role": b_diff, "context": ctx_data}))
+                    pipe_close = r.pipeline()
+                    pipe_close.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_b'], "role": b_base, "context": ctx_data}))
+                    pipe_close.lpush(f"QUEUE:ORDER:{b_diff.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_d'], "role": b_diff, "context": ctx_data}))
+                    pipe_close.execute()
                     
                     dong_ho_dong[pair_group] = 0
                     thoi_diem_dong_lenh_cuoi_map[pair_group] = time.time() 
@@ -495,8 +507,11 @@ try:
                     "base": b_base,
                     "diff": b_diff
                 }
-                r.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": lenh_base, "volume": vol_base, "context": ctx_vao}))
-                r.lpush(f"QUEUE:ORDER:{b_diff.upper()}", json.dumps({"action": lenh_diff, "volume": vol_diff, "context": ctx_vao}))
+                
+                pipe_open = r.pipeline()
+                pipe_open.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": lenh_base, "volume": vol_base, "context": ctx_vao}))
+                pipe_open.lpush(f"QUEUE:ORDER:{b_diff.upper()}", json.dumps({"action": lenh_diff, "volume": vol_diff, "context": ctx_vao}))
+                pipe_open.execute()
                 print(f"\n⚡ BÓP CÒ: {b_base} ({lenh_base}) <-> {b_diff} ({lenh_diff}) {th['mode_vao']} | Lệch: {th['chenh_lech']:.2f}")
                 
                 san_data[b_base]["so_lenh_dang_mo"] += 1
@@ -518,15 +533,7 @@ try:
                 so_cap_da_ban += 1
                 if so_cap_da_ban >= quan_tri["max_concurrent_pairs"]: break
 
-        # # THÊM MỚI: CHỐT ĐỒNG HỒ VÀ IN TỐC ĐỘ (CHỈ 10 VÒNG)
-        # if dem_so_vong_test < 3:
-        #     dem_so_vong_test += 1
-        #     thoi_gian_chay_ms = (time.time() - thoi_gian_bat_dau_vong) * 1000 
-        #     print(f"⚡ [BENCHMARK] Vòng quét thứ {dem_so_vong_test} xử lý xong trong: {thoi_gian_chay_ms:.3f} mili-giây")
-            
-        # if dem_so_vong_test == 10:
-        #     dem_so_vong_test += 1
-        #     print("✅ Đã đo xong 10 vòng! Hệ thống tự động ẩn log tốc độ để tránh rác màn hình.")
+
 
 except KeyboardInterrupt:
     print("\n🛑 Đô Đốc đã hạ lệnh rút quân!")

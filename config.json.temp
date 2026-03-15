@@ -8,7 +8,8 @@
     "width": 600,
     "height": 200,
     "offset_x": 10,
-    "offset_y": 0
+    "offset_y": 0,
+    "enable_realtime_log": true
   },
   "brokers": {
     "TICKMILL": {

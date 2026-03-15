@@ -5,6 +5,7 @@ import time
 import argparse
 import os
 import threading 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from utils.terminal import dan_tran_cua_so
 
@@ -25,6 +26,9 @@ try:
         config = json.load(f)
     mt5_path = config['brokers'][args.broker]['path']
     redis_conf = config['redis']
+    
+    terminal_ui_conf = config.get('terminal_ui', {})
+    enable_realtime_log = terminal_ui_conf.get('enable_realtime_log', True)
 except Exception as e:
     print(f"❌ Lỗi nạp config: {e}")
     quit()
@@ -126,10 +130,10 @@ def thuc_thi_chi_thi(chi_thi, current_tick):
     elif action == "CLOSE_BY_TICKET":
         positions = mt5.positions_get(ticket=chi_thi.get("ticket")) 
         if positions: 
-            threading.Thread(target=thuc_thi_dong_1_lenh, args=(positions[0], current_tick, "", chi_thi)).start()
+            executor.submit(thuc_thi_dong_1_lenh, positions[0], current_tick, "", chi_thi)
 
     elif action == "FETCH_HISTORY_ONLY":
-        threading.Thread(target=thuc_thi_dong_bo_lich_su, args=(chi_thi,)).start()
+        executor.submit(thuc_thi_dong_bo_lich_su, chi_thi)
 
 # ==========================================
 # VÒNG LẶP CHÍNH (TRÁI TIM WORKER TỐI THƯỢNG)
@@ -140,6 +144,8 @@ last_tick_time = 0
 
 is_connected = False
 is_trade_allowed = False
+
+executor = ThreadPoolExecutor(max_workers=3)
 
 # Khai báo bộ nhớ đệm cho Tiền và Lệnh để lúc in Tick không bị lỗi
 so_lenh_hien_tai = 0
@@ -192,7 +198,7 @@ try:
                 if is_connected and is_trade_allowed:
                     current_tick = mt5.symbol_info_tick(args.symbol)
                     if current_tick:
-                        threading.Thread(target=thuc_thi_chi_thi, args=(json.loads(thu_tu_master), current_tick)).start()
+                        executor.submit(thuc_thi_chi_thi, json.loads(thu_tu_master), current_tick)
                 else:
                     print(f"\n🗑️ [{args.broker}] Đang mất mạng, ném sọt rác lệnh cũ!")
 
@@ -221,8 +227,12 @@ try:
                     last_tick_time = tick.time_msc
                     co_du_lieu_moi = True
                     
-                    # IN RA MÀN HÌNH NGAY LẬP TỨC MỖI KHI CÓ TICK MỚI
-                    print(f"\r📊 {args.symbol} | B: {tick.bid:.3f} - A: {tick.ask:.3f} | 💰 Eq: {equity_hien_tai:.2f}$ | 🛒 Lệnh: {so_lenh_hien_tai}   ", end="", flush=True)
+                    if enable_realtime_log:
+                        # IN RA MÀN HÌNH MƯỢT MÀ NẾU ĐƯỢC PHÉP
+                        print(f"\r📊 {args.symbol} | B: {tick.bid:.3f} - A: {tick.ask:.3f} | 💰 Eq: {equity_hien_tai:.2f}$ | 🛒 Lệnh: {so_lenh_hien_tai}   ", end="", flush=True)
+                    elif now_sec - last_pos_update >= 0.5:
+                        # CHẾ ĐỘ ẨN GIÚP BƠM HẾT TÀI NGUYÊN CHO REDIS (Chỉ in nhích tí cho đỡ chết màn hình)
+                        print(f"\r⚡ {args.symbol} | Chế độ [HIỆU NĂNG CAO] | Eq: {equity_hien_tai:.2f}$ | 🛒 Lệnh: {so_lenh_hien_tai}   ", end="", flush=True)
 
             # --- GỬI ĐỒNG LOẠT BƯU PHẨM LÊN REDIS ---
             if co_du_lieu_moi:
