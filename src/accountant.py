@@ -114,6 +114,12 @@ while True:
                                     entry_live, close_live = 0.0, 0.0
                             else:
                                 entry_live, close_live = 0.0, 0.0
+                                
+                        # Map base và diff với Leg1 và Leg2 để cột Speed khớp tên sàn
+                        b1_speed_entry = ctx.get("speed_base_entry", 0) if b1_name == ctx.get("base") else ctx.get("speed_diff_entry", 0)
+                        b1_speed_close = ctx.get("speed_base_close", 0) if b1_name == ctx.get("base") else ctx.get("speed_diff_close", 0)
+                        b2_speed_entry = ctx.get("speed_diff_entry", 0) if b1_name == ctx.get("base") else ctx.get("speed_base_entry", 0)
+                        b2_speed_close = ctx.get("speed_diff_close", 0) if b1_name == ctx.get("base") else ctx.get("speed_base_close", 0)
                         
                         writer.writerow([
                             datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -123,8 +129,7 @@ while True:
                             ctx.get('mode_dong', ''), f"{ctx.get('chenh_dong', 0):.2f}", f"{close_live:.2f}",
                             b1_op, b1_cp, b2_op, b2_cp,
                             f"{b1_prof:.2f}", f"{b2_prof:.2f}", f"{total_fee:.2f}", f"{net_profit:.2f}",
-                            ctx.get("speed_base_entry", 0), ctx.get("speed_diff_entry", 0),
-                            ctx.get("speed_base_close", 0), ctx.get("speed_diff_close", 0),
+                            b1_speed_entry, b2_speed_entry, b1_speed_close, b2_speed_close,
                             f"{chien_thuat.get('deviation_entry', 0):.3f}", f"{chien_thuat.get('deviation_close', 0):.3f}", chien_thuat.get('stable_time', 0)
                         ])
                     
