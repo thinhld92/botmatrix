@@ -208,7 +208,8 @@ try:
                 "tick": tick_obj, 
                 "so_lenh_dang_mo": so_lenh_dang_mo, 
                 "danh_sach_ticket": danh_sach_ticket, 
-                "equity": float(eq_raw) if eq_raw else 999999.0
+                "equity": float(eq_raw) if eq_raw else 999999.0,
+                "speed_60s": tick_obj.get("speed_60s", 0) if tick_obj else 0
             }
 
         # ----------------------------------------------------
@@ -379,7 +380,9 @@ try:
                         "pair_token": pair_key, "pair_id": pair_group,
                         "chenh_vao": cap.get('chenh_lech_vao', 0), "mode_vao": cap.get('tinh_chat_vao', 'UNKNOWN'),
                         "chenh_dong": tin_hieu['chenh_lech'], "mode_dong": f"[{chien_thuat.get('stable_mode', 'freeze')[0].upper()}]", "action_type": "CLOSE",
-                        "huong": cap['huong'], "base": b_base, "diff": b_diff
+                        "huong": cap['huong'], "base": b_base, "diff": b_diff,
+                        "speed_base_close": san_data[b_base]["speed_60s"],
+                        "speed_diff_close": san_data[b_diff]["speed_60s"]
                     }
                     pipe_close = r.pipeline()
                     pipe_close.lpush(f"QUEUE:ORDER:{b_base.upper()}", json.dumps({"action": "CLOSE_BY_TICKET", "ticket": cap['ticket_b'], "role": b_base, "context": ctx_data}))
@@ -505,7 +508,9 @@ try:
                     "mode_vao": th["mode_vao"],
                     "huong": th["chi_tiet"]["loai_lenh"],
                     "base": b_base,
-                    "diff": b_diff
+                    "diff": b_diff,
+                    "speed_base_entry": san_data[b_base]["speed_60s"],
+                    "speed_diff_entry": san_data[b_diff]["speed_60s"]
                 }
                 
                 pipe_open = r.pipeline()

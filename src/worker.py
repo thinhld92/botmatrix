@@ -5,6 +5,7 @@ import time
 import argparse
 import os
 import threading 
+import collections
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from utils.terminal import dan_tran_cua_so
@@ -147,6 +148,8 @@ is_trade_allowed = False
 
 executor = ThreadPoolExecutor(max_workers=3)
 
+tick_history = collections.deque()
+
 # Khai báo bộ nhớ đệm cho Tiền và Lệnh để lúc in Tick không bị lỗi
 so_lenh_hien_tai = 0
 equity_hien_tai = 0.0
@@ -223,16 +226,34 @@ try:
                 # 👉 B. Báo cáo Tick & In Màn Hình (Chạy tốc độ tột đỉnh)
                 tick = mt5.symbol_info_tick(args.symbol)
                 if tick and tick.time_msc != last_tick_time:
-                    pipe.set(REDIS_TICK_KEY, json.dumps({"bid": tick.bid, "ask": tick.ask, "time_msc": tick.time_msc}))
+                    # Nạp Tick mới vào Deque
+                    tick_history.append(tick.time_msc)
+                    
+                    # Cắt chuỗi deque những tick cũ hơn 60.000ms (60s)
+                    cutoff_time = tick.time_msc - 60000 
+                    while len(tick_history) > 0:
+                         if tick_history[0] < cutoff_time:
+                             tick_history.popleft()
+                         else:
+                             break
+                    
+                    speed_60s = len(tick_history)
+                    
+                    pipe.set(REDIS_TICK_KEY, json.dumps({
+                        "bid": tick.bid, 
+                        "ask": tick.ask, 
+                        "time_msc": tick.time_msc,
+                        "speed_60s": speed_60s
+                    }))
                     last_tick_time = tick.time_msc
                     co_du_lieu_moi = True
                     
                     if enable_realtime_log:
                         # IN RA MÀN HÌNH MƯỢT MÀ NẾU ĐƯỢC PHÉP
-                        print(f"\r📊 {args.symbol} | B: {tick.bid:.3f} - A: {tick.ask:.3f} | 💰 Eq: {equity_hien_tai:.2f}$ | 🛒 Lệnh: {so_lenh_hien_tai}   ", end="", flush=True)
+                        print(f"\r {args.symbol} | B: {tick.bid:.3f} - A: {tick.ask:.3f} | E: {equity_hien_tai:.2f}$ | Open: {so_lenh_hien_tai} | {speed_60s} Ti/m   ", end="", flush=True)
                     elif now_sec - last_pos_update >= 0.5:
                         # CHẾ ĐỘ ẨN GIÚP BƠM HẾT TÀI NGUYÊN CHO REDIS (Chỉ in nhích tí cho đỡ chết màn hình)
-                        print(f"\r⚡ {args.symbol} | Chế độ [HIỆU NĂNG CAO] | Eq: {equity_hien_tai:.2f}$ | 🛒 Lệnh: {so_lenh_hien_tai}   ", end="", flush=True)
+                        print(f"\r {args.symbol} | [HFT_MODE] | E: {equity_hien_tai:.2f}$ | Open: {so_lenh_hien_tai} | {speed_60s} Ti/m   ", end="", flush=True)
 
             # --- GỬI ĐỒNG LOẠT BƯU PHẨM LÊN REDIS ---
             if co_du_lieu_moi:

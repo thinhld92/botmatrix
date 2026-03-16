@@ -10,10 +10,13 @@ os.system("title 👓 KẾ TOÁN TRƯỞNG TỔNG HỢP")
 try: ctypes.windll.kernel32.SetConsoleTitleW("👓 KẾ TOÁN TRƯỞNG")
 except: pass
 
-with open('config.json', 'r', encoding='utf-8') as f: config = json.load(f)
+with open('config.json', 'r', encoding='utf-8') as f:
+    config = json.load(f)
+
 r = redis.Redis(host=config['redis']['host'], port=config['redis']['port'], db=config['redis']['db'], decode_responses=True)
 
 vps_name = config.get("vps_name", "UNKNOWN_VPS")
+chien_thuat = config.get('super_matrix', {}).get('chien_thuat', {})
 
 history_dir = "history"
 os.makedirs(history_dir, exist_ok=True)
@@ -26,7 +29,7 @@ while True:
     try:
         now_sec = time.time()
         data_raw = r.brpop("QUEUE:ACCOUNTANT", timeout=1)
-        
+
         if data_raw:
             bien_lai = json.loads(data_raw[1])
             ctx = bien_lai.get("context", {})
@@ -59,7 +62,9 @@ while True:
                                 'Entry_Mode', 'Entry_Dev', 'Entry_Live',
                                 'Close_Mode', 'Close_Dev', 'Close_Live',
                                 'Leg1_Open', 'Leg1_Close', 'Leg2_Open', 'Leg2_Close', 
-                                'Leg1_Profit', 'Leg2_Profit', 'Total_Fee', 'Net_Profit'
+                                'Leg1_Profit', 'Leg2_Profit', 'Total_Fee', 'Net_Profit',
+                                'Leg1_Speed_Entry', 'Leg2_Speed_Entry', 'Leg1_Speed_Close', 'Leg2_Speed_Close',
+                                'Cfg_Dev_Entry', 'Cfg_Dev_Close', 'Cfg_Stable_Time'
                             ])
                         
                         if is_single or len(danh_sach_san_trong_pair) == 1:
@@ -117,7 +122,10 @@ while True:
                             ctx.get('mode_vao', ''), f"{ctx.get('chenh_vao', 0):.2f}", f"{entry_live:.2f}",
                             ctx.get('mode_dong', ''), f"{ctx.get('chenh_dong', 0):.2f}", f"{close_live:.2f}",
                             b1_op, b1_cp, b2_op, b2_cp,
-                            f"{b1_prof:.2f}", f"{b2_prof:.2f}", f"{total_fee:.2f}", f"{net_profit:.2f}"
+                            f"{b1_prof:.2f}", f"{b2_prof:.2f}", f"{total_fee:.2f}", f"{net_profit:.2f}",
+                            ctx.get("speed_base_entry", 0), ctx.get("speed_diff_entry", 0),
+                            ctx.get("speed_base_close", 0), ctx.get("speed_diff_close", 0),
+                            f"{chien_thuat.get('deviation_entry', 0):.3f}", f"{chien_thuat.get('deviation_close', 0):.3f}", chien_thuat.get('stable_time', 0)
                         ])
                     
                     print(f"✅ Đã ghi sổ: {pair_token} | Lời/Lỗ: {net_profit:.2f}$")
