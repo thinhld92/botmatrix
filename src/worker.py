@@ -100,6 +100,7 @@ def thuc_thi_dong_1_lenh(pos, current_tick, comment, chi_thi):
                 "context": chi_thi.get("context", {}) 
             }
             r.lpush("QUEUE:ACCOUNTANT", json.dumps(bien_lai))
+    else: print(f"❌ Lỗi đóng lệnh {pos.ticket}: {result.retcode}") 
 
 def thuc_thi_dong_bo_lich_su(chi_thi):
     ticket = chi_thi.get("ticket")
@@ -154,11 +155,15 @@ tick_history = collections.deque()
 so_lenh_hien_tai = 0
 equity_hien_tai = 0.0
 
+def tat_may_an_toan():
+    print(f"\n🛑 [{args.broker}] Đang tắt máy an toàn...")
+    executor.shutdown(wait=False)
+    mt5.shutdown()
+    print(f"✅ [{args.broker}] MT5 đã ngắt kết nối sạch sẽ. Tạm biệt!")
+
 try:
     while True:
-        start_tick = time.perf_counter()
         try:
-            start_tick = time.perf_counter()
             now_sec = time.time()
             pipe = r.pipeline()
             co_du_lieu_moi = False 
@@ -167,6 +172,11 @@ try:
             # 0. BỘ PHẬN KHÁM SỨC KHỎE (Hỏi MT5 2s/lần)
             # ----------------------------------------------------
             if now_sec - last_health_check >= 2.0:
+                # 👉 Kiểm tra tín hiệu tắt máy từ Redis (Nhờ bám theo Health Check nên 0 tốn hiệu năng)
+                if r.get("SIGNAL:SHUTDOWN"):
+                    tat_may_an_toan()
+                    quit()
+
                 term_info = mt5.terminal_info()
                 if term_info:
                     is_connected = term_info.connected
@@ -225,35 +235,45 @@ try:
 
                 # 👉 B. Báo cáo Tick & In Màn Hình (Chạy tốc độ tột đỉnh)
                 tick = mt5.symbol_info_tick(args.symbol)
+                
+                # 1. Cắt chuỗi deque những tick cũ hơn 60 giây (dùng now_sec để không bị treo nếu mất tick)
+                cutoff_time = now_sec - 60.0
+                speed_changed = False
+                while len(tick_history) > 0:
+                     if tick_history[0] < cutoff_time:
+                         tick_history.popleft()
+                         speed_changed = True
+                     else:
+                         break
+                
+                speed_60s = len(tick_history)
+                has_new_tick = False
+                
                 if tick and tick.time_msc != last_tick_time:
-                    # Nạp Tick mới vào Deque
-                    tick_history.append(tick.time_msc)
-                    
-                    # Cắt chuỗi deque những tick cũ hơn 60.000ms (60s)
-                    cutoff_time = tick.time_msc - 60000 
-                    while len(tick_history) > 0:
-                         if tick_history[0] < cutoff_time:
-                             tick_history.popleft()
-                         else:
-                             break
-                    
+                    # 2. Nạp Tick mới vào Deque (dùng now_sec làm mốc thời gian)
+                    tick_history.append(now_sec)
                     speed_60s = len(tick_history)
-                    
-                    pipe.set(REDIS_TICK_KEY, json.dumps({
-                        "bid": tick.bid, 
-                        "ask": tick.ask, 
-                        "time_msc": tick.time_msc,
-                        "speed_60s": speed_60s
-                    }))
                     last_tick_time = tick.time_msc
-                    co_du_lieu_moi = True
+                    has_new_tick = True
+                
+                # 3. Cập nhật lên Redis nếu có Tick mới HOẶC do Tick cũ bị Pop làm tụt speed
+                if has_new_tick or speed_changed:
+                    if tick:
+                        pipe.set(REDIS_TICK_KEY, json.dumps({
+                            "bid": tick.bid, 
+                            "ask": tick.ask, 
+                            "time_msc": tick.time_msc,
+                            "speed_60s": speed_60s
+                        }))
+                        co_du_lieu_moi = True
                     
-                    if enable_realtime_log:
-                        # IN RA MÀN HÌNH MƯỢT MÀ NẾU ĐƯỢC PHÉP
-                        print(f"\r {args.symbol} | B: {tick.bid:.3f} - A: {tick.ask:.3f} | E: {equity_hien_tai:.2f}$ | Open: {so_lenh_hien_tai} | {speed_60s} Ti/m   ", end="", flush=True)
-                    elif now_sec - last_pos_update >= 0.5:
-                        # CHẾ ĐỘ ẨN GIÚP BƠM HẾT TÀI NGUYÊN CHO REDIS (Chỉ in nhích tí cho đỡ chết màn hình)
-                        print(f"\r {args.symbol} | [HFT_MODE] | E: {equity_hien_tai:.2f}$ | Open: {so_lenh_hien_tai} | {speed_60s} Ti/m   ", end="", flush=True)
+                    if has_new_tick:
+                        if enable_realtime_log:
+                            # IN RA MÀN HÌNH MƯỢT MÀ NẾU ĐƯỢC PHÉP
+                            print(f"\r {args.symbol} | B: {tick.bid:.3f} - A: {tick.ask:.3f} | E: {equity_hien_tai:.2f}$ | Open: {so_lenh_hien_tai} | {speed_60s} Ti/m   ", end="", flush=True)
+                        elif now_sec - last_pos_update >= 0.5:
+                            # CHẾ ĐỘ ẨN GIÚP BƠM HẾT TÀI NGUYÊN CHO REDIS (Chỉ in nhích tí cho đỡ chết màn hình)
+                            print(f"\r {args.symbol} | [HFT_MODE] | E: {equity_hien_tai:.2f}$ | Open: {so_lenh_hien_tai} | {speed_60s} Ti/m   ", end="", flush=True)
 
             # --- GỬI ĐỒNG LOẠT BƯU PHẨM LÊN REDIS ---
             if co_du_lieu_moi:
@@ -273,5 +293,4 @@ try:
             time.sleep(0.01)
 
 except KeyboardInterrupt:
-    print(f"\n🛑 Worker {args.broker} rút lui!")
-    mt5.shutdown()
+    tat_may_an_toan()

@@ -67,10 +67,6 @@ dong_ho_vao = {}
 dong_ho_dong = {}       
 thoi_diem_nhan_tick_cuoi = {} 
 
-thoi_diem_dong_lenh_cuoi_map = {}
-orphan_count = {b: 0 for b in active_brokers}        
-broker_cooldown_until = {b: 0 for b in active_brokers}
-
 # 👉 THÊM DÒNG NÀY VÀO: Đồng hồ theo dõi tuổi thọ của lệnh lẻ
 thoi_diem_phat_hien_ve_le = {}
 
@@ -120,14 +116,19 @@ current_utc_time_str = "00:00"
 # ==========================================
 try:
     while True:
-        thoi_gian_bat_dau_vong = time.time()
-
         time.sleep(0.001) 
         now_sec = time.time()
         
         if now_sec - last_time_update >= 1.0:
             current_utc_time_str = datetime.now(timezone.utc).strftime("%H:%M")
             last_time_update = now_sec
+
+            # 👉 Kiểm tra tín hiệu tắt máy từ Redis (1s/lần, 0 tốn hiệu năng)
+            if r.get("SIGNAL:SHUTDOWN"):
+                print("\n🛑 Đô Đốc nhận lệnh rút quân từ Redis! Đang tắt máy an toàn...")
+                luu_tri_nho()
+                print("✅ Đã lưu trí nhớ. Tạm biệt!")
+                quit()
 
         cho_phep_vao_lenh = kiem_tra_gio(chien_thuat.get("trading_hours", []), current_utc_time_str)
         gio_cam_bat_buoc_dong = kiem_tra_gio(chien_thuat.get("force_close_hours", []), current_utc_time_str)
@@ -215,10 +216,10 @@ try:
         # ----------------------------------------------------
         # 3. ÔNG TƠ BÀ NGUYỆT (GHÉP CẶP TICKET - BỐC VÉ MỚI NHẤT) 
         # ----------------------------------------------------
-        paired_tickets = {broker: [] for broker in active_brokers}
+        paired_tickets = {broker: set() for broker in active_brokers}
         for cap in lich_su_vao_lenh:
-            paired_tickets[cap['base']].append(cap['ticket_b'])
-            paired_tickets[cap['diff']].append(cap['ticket_d'])
+            paired_tickets[cap['base']].add(cap['ticket_b'])
+            paired_tickets[cap['diff']].add(cap['ticket_d'])
 
         chuyen_xe_con_lai = []
         for chuyen in chuyen_xe_dang_cho:
@@ -240,8 +241,8 @@ try:
                     "huong": chuyen["huong"], "time_match": time.time(), # Dùng giờ Local để tính Hold Time
                     "chenh_lech_vao": chuyen["chenh_vao"], "tinh_chat_vao": chuyen["mode_vao"]
                 })
-                paired_tickets[b_base].append(t_base['ticket'])
-                paired_tickets[b_diff].append(t_diff['ticket'])
+                paired_tickets[b_base].add(t_base['ticket'])
+                paired_tickets[b_diff].add(t_diff['ticket'])
                 orphan_count[b_base] = 0
                 orphan_count[b_diff] = 0
                 luu_tri_nho()
@@ -316,7 +317,7 @@ try:
                         print(f"\n☠️ [TRẢM] Lệnh mồ côi {t_id} của {broker} đã bị kẹt {tuoi_ve_le:.1f}s! Ép đóng ngay lập tức!")
                         
                         # Tạm đưa vào danh sách có cặp để không bị lặp lệnh spam gửi đi
-                        paired_tickets[broker].append(t_id) 
+                        paired_tickets[broker].add(t_id) 
                         
                         orphan_count[broker] += 1
                         if orphan_count[broker] >= chien_thuat.get("max_orphan_count", 3):
@@ -539,6 +540,13 @@ try:
                 if so_cap_da_ban >= quan_tri["max_concurrent_pairs"]: break
 
 
-
+        # Dọn rác dict theo dõi vé lẻ
+        all_live_tickets = set()
+        for broker in active_brokers:
+            for t in san_data[broker]["danh_sach_ticket"]:
+                all_live_tickets.add(t["ticket"])
+        thoi_diem_phat_hien_ve_le = {k: v for k, v in thoi_diem_phat_hien_ve_le.items() if k in all_live_tickets}
 except KeyboardInterrupt:
     print("\n🛑 Đô Đốc đã hạ lệnh rút quân!")
+    luu_tri_nho()
+    print("✅ Đã lưu trí nhớ. Tạm biệt!")

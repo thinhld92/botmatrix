@@ -74,8 +74,16 @@ thoi_gian_gui_cuoi = 0
 
 try:
     while True:
-        # 1. Chờ lấy lỗi đầu tiên (Sẽ đứng im ở đây nếu không có lỗi, KHÔNG tốn CPU)
-        queue_name, first_msg = r.blpop(QUEUE_TELEGRAM, timeout=0)
+        # 👉 Kiểm tra tín hiệu tắt máy từ Redis
+        if r.get("SIGNAL:SHUTDOWN"):
+            print("🛑 Telegram Service nhận lệnh rút quân! Tạm biệt!")
+            quit()
+
+        # 1. Chờ lấy lỗi đầu tiên (Chờ tối đa 5s rồi quay lại check shutdown)
+        result = r.blpop(QUEUE_TELEGRAM, timeout=5)
+        if not result:
+            continue
+        queue_name, first_msg = result
         
         now = time.time()
         

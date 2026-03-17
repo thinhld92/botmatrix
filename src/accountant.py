@@ -28,6 +28,12 @@ print(f"👓 Kế Toán Trưởng [{vps_name}] đã vào vị trí. Đang lắng
 while True:
     try:
         now_sec = time.time()
+
+        # 👉 Kiểm tra tín hiệu tắt máy từ Redis
+        if r.get("SIGNAL:SHUTDOWN"):
+            print("🛑 Kế Toán nhận lệnh rút quân từ Redis! Tạm biệt!")
+            quit()
+
         data_raw = r.brpop("QUEUE:ACCOUNTANT", timeout=1)
 
         if data_raw:
